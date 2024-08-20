@@ -42,6 +42,7 @@ keep_alive_count = 0
 auth_token = False
 input_changed = False
 input_status = b"0"
+srv_token = False
 
 #Strings for fun
 err_msg = b"ERR" 
@@ -69,6 +70,12 @@ bhd_msg = b"BHD"
 bdr_msg = b"BDR"
 btk_msg = b"BTK"
 bbd_msg = b"BBD"
+in1_enable = True
+in2_enable = True
+in3_enable = True
+in4_enable = True
+in5_enable = True
+in6_enable = True
 
 
 
@@ -123,90 +130,95 @@ def send_data(data_to_send):#Function to handle the data to send, to avoid writi
 
 def recieve_data(): #Function to handle the data recieved, same reason as send_data() 
     
-    global keep_alive_count
-    Re_EN.value(0)
-    De_EN.value(0)
-    time.sleep_ms(sleep_time)
-    data = uart.readline()
-    if data and data != "" :#if data is not empty      
-        cmd=data[0:3]  #extract command from uart           
-        if cmd == ack_msg:
-            pass
-        elif cmd == ath_msg:
-            keep_alive_count = 0
-            send_data(ack_msg)
-            slave_auth()
-            #print(len(data))
-        elif cmd == slv_msg:
-            if (len(data) > 3 ):
-                if data[3:6] == lps_msg:
-                    pass ##Turn on something
-                elif data[3:6] == lwh_msg:
-                    pass ##Turn on something
-                elif data[3:6] == lsb_msg:
-                    pass ##Turn on something
-                elif cmd == bhd_msg:
-                    pass
-                elif cmd == bdr_msg:
-                    pass
-                elif cmd == btk_msg:
-                    pass
-                elif cmd == bbd_msg:
-                    pass
-                elif cmd == srv_msg:
-                    pass
-                
+    global keep_alive_count, srv_token,in1_enable, in2_enable, in3_enable, in4_enable, in5_enable, in6_enable
+    try:
+        Re_EN.value(0)
+        De_EN.value(0)
+        time.sleep_ms(sleep_time)
+
+        data = uart.readline()
+        if data and data != "" :#if data is not empty      
+            cmd=data[0:3]  #extract command from uart           
+            if cmd == ack_msg:
+                pass
+            elif cmd == ath_msg:
+                keep_alive_count = 0
+                send_data(ack_msg)
+                srv_token = False #Override service token when it is connected to a Master 
+                slave_auth()
+                #print(len(data))
+            elif cmd == slv_msg:
+                print(data)
+                if (len(data) > 3 ):
+                    if data[3:6] == lps_msg:
+                        pass ##Turn on something
+                    elif data[3:6] == lwh_msg:
+                        pass ##Turn on something
+                    elif data[3:6] == lsb_msg:
+                        pass ##Turn on something
+                    elif data[3:6] == bhd_msg:
+                        pass
+                    elif data[3:6] == bdr_msg:
+                        pass
+                    elif data[3:6] == btk_msg:
+                        pass
+                    elif data[3:6] == bbd_msg:
+                        in1_enable = False
+                    elif data[3:6] == srv_msg:
+                        srv_token = True
+
+                    else:
+                        pass # Do nothing, good life
                 else:
-                    pass # Do nothing, good life
+                    #print(mst_msg+input_status)
+                    send_data(mst_msg+input_status)
+            elif cmd == kbr_msg:
+                pass #do nothing, slave should not recieve this message
+            elif cmd == esl_msg:
+                pass #do nothing, slave should not recieve this message               
+            elif cmd == nop_msg:
+                pass #do nothing command :D
+            elif cmd == xxx_msg:
+                pass # do something but not implemented yet :D        
+            elif cmd == crk_msg:
+                pass #do nothing, slave should not recieve this message
+            elif cmd == lps_msg:
+                pass #do nothing, slave should not recieve this message
+            elif cmd == lwh_msg:
+                pass #do nothing, slave should not recieve this message
+            elif cmd == lsb_msg:
+                pass #do nothing, slave should not recieve this message
+            
             else:
-                #print(mst_msg+input_status)
-                send_data(mst_msg+input_status)
-        elif cmd == kbr_msg:
-            pass #do nothing, slave should not recieve this message
-        elif cmd == esl_msg:
-            pass #do nothing, slave should not recieve this message               
-        elif cmd == nop_msg:
-            pass #do nothing command :D
-        elif cmd == xxx_msg:
-            pass # do something but not implemented yet :D        
-        elif cmd == crk_msg:
-            pass #do nothing, slave should not recieve this message
-        elif cmd == lps_msg:
-            pass #do nothing, slave should not recieve this message
-        elif cmd == lwh_msg:
-            pass #do nothing, slave should not recieve this message
-        elif cmd == lsb_msg:
-            pass #do nothing, slave should not recieve this message
-        
+                #master_disconnection(keep_alive_count)
+                #print(cmd)
+                print("No deberiamos estar aqui cerebro, Snort!")
+                pass
         else:
-            #master_disconnection(keep_alive_count)
-            print(cmd)
-            print("No deberiamos estar aqui cerebro, Snort!")
+            keep_alive_count += 1
             pass
-           
-    else:
-        keep_alive_count += 1
+    except:
         pass
 
 
 def monitor_inputs():
-    global input_changed, input_status
+    global input_changed, input_status, in1_enable, in2_enable, in3_enable, in4_enable, in5_enable, in6_enable
     # Monitorear entradas In1 a In6
 
     if (In1.value() or In2.value() or In3.value() or In4.value() or In5.value() or In6.value()) and not input_changed:
         # Se ha detectado un cambio en alguna entrada
         input_changed = True
-        if In1.value():
+        if In1.value() and in1_enable:
             input_status = b"1"
-        elif In2.value():
+        elif In2.value() and in2_enable:
             input_status = b"2"
-        elif In3.value():
+        elif In3.value() and in3_enable:
             input_status = b"3"   
-        elif In4.value():
+        elif In4.value() and in4_enable:
             input_status = b"4"   
-        elif In5.value():
+        elif In5.value() and in5_enable:
             input_status = b"5"   
-        elif In6.value():
+        elif In6.value() and in6_enable:
             input_status = b"6"   
         else:
             pass ##should not get here
@@ -244,19 +256,23 @@ def slave_wheel(open_wheel):
 
 def main():
     init()  # Inicializar el sistema
-    auth_token = False
-    global keep_alive_count, input_changed 
+    global keep_alive_count, input_changed, srv_token
     delaycount = 290
+    try:
+        while True:
+            # Bucle principal del esclavo
 
-    while True:
-        # Bucle principal del esclavo
-        recieve_data()
-        if keep_alive_count >= delaycount:
-            slave_panic()
-        else:
-            keep_alive_count += 1
-            #print(keep_alive_count)
-        monitor_inputs()
+            recieve_data()
+            if keep_alive_count >= delaycount:
+                slave_panic()
+            else:
+                keep_alive_count += 1
+                #print(keep_alive_count)
+            monitor_inputs()
+            if srv_token:
+                keep_alive_count = 0
+    except:
+        pass
 
 
 if __name__ == "__main__":

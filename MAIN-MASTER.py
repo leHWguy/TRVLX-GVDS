@@ -1,6 +1,3 @@
-#If you are reading this, your mom is a dude :D
-#and you should'nt be here, hopefully you smiled to the cameras :D
-#we will find you :)
 
 from machine import Pin, UART, Timer, PWM
 import time
@@ -48,7 +45,7 @@ PicoIn2 = 17
 PicoIn3 = 18
 PicoIn4 = 20
 PicoIn5 = 21
-#Hans w/h <3
+
 delaycounts = 5 #Seconds
 slave_msg = None
 master_msg = None
@@ -84,13 +81,14 @@ bhd_msg = b"BHD"
 bdr_msg = b"BDR"
 btk_msg = b"BTK"
 bbd_msg = b"BBD"
-
+bps_payload = ""
 kbr_payload = kbr_msg
 slv_payload = slv_msg
 snsrErr = 0
-
-
-
+cargo_rqst = False
+srv_token = False
+bypass_token = False
+lastPass = 0
 
 def init():
     # Configuración de pines GPIO
@@ -146,35 +144,33 @@ def send_data(data_to_send):#Function to handle the data to send, to avoid writi
     time.sleep_ms(sleep_time)
 
 def setNumbers(aVariable):
-    
-    
-    match aVariable:
-        case 0:
-            return 6
-        case 1:
-            return 3
-        case 2:
-            return 8
-        case 3:
-            return 5
-        case 4:
-            return 2
-        case 5:
-            return 9
-        case 6:
-            return 1
-        case 7:
-            return 0
-        case 8:
-            return 7
-        case 9:
-            return 4
-        case _:
-            return 0
+    if aVariable == 0:
+        return 6
+    elif aVariable == 1:
+        return 3
+    elif aVariable == 2:
+        return 8
+    elif aVariable == 3:
+        return 5
+    elif aVariable == 4:
+        return 2
+    elif aVariable == 5:
+        return 9
+    elif aVariable == 6:
+        return 1
+    elif aVariable == 7:
+        return 0
+    elif aVariable == 8:
+        return 7
+    elif aVariable == 9:
+        return 4
+    else:
+        return 0
 
 def recieve_data(): #Function to handle the data recieved, same reason as send_data() 
-    aValue= 4
-    global keep_alive_count, auth_token, bigNumber, kbr_payload, slv_payload, snsrErr
+    aValue= 46
+    
+    global cargo_rqst, keep_alive_count, auth_token, bigNumber, kbr_payload, slv_payload, snsrErr, no_cargo_mode, is_in_panic_mode, srv_token,bypass_token, lastPass, bps_payload
     try:   
         Re_EN.value(0)
         De_EN.value(0)
@@ -183,7 +179,7 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
         #print(data)
         if data and data != "" :#if data is not empty      
             cmd = data[0:3]  #extract command from uart
-            print(data)
+            #print(data)
             if cmd == ack_msg:
                 keep_alive_count = 0
                 master_reconnect()
@@ -196,18 +192,23 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
             elif cmd == esl_msg:
                 pass #do nothing, master should not recieve this message
             elif cmd == key_msg:
-                key= int(data[3:9])
+                key= int(data[5:9])
                 #print(key)
                 if key == bigNumber:
                     master_reconnect()
-                    auth_token = False
+                    auth_token = False #We can accept new errors
                     is_in_panic_mode = False
                     keep_alive_count = 0
                     kbr_payload = crk_msg
+                    if cargo_rqst:
+                        no_cargo_mode = True
+                        
+                    else:
+                        no_cargo_mode = False
                 else:
-                    #send_data(gen_ecode(sensorfault,PswdTypeUnlock)) #Create another error since the password was incorrect
-                    
-                    kbr_payload = gen_ecode(snsrErr, PswdTypeUnlock)
+                   #Create another error since the password was incorrect  
+                    kbr_payload = gen_ecode(snsrErr, lastPass)
+
             elif cmd == mst_msg:#Recieve data from slave, the number is the sensor from it
                 cmd_data = int(data[3])
                 #print(cmd_data)
@@ -249,19 +250,24 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
             elif cmd == whl_msg: #generates an error to unlock the extra wheel in the slave side
                 snsrErr=SnsrTypeWheel
                 kbr_payload=gen_ecode(snsrErr, PswdTypeUnlock)
+                auth_token = True
             elif cmd == pst_msg: #generates an error to unlock the pistons in the slave side (Door piston)
                 snsrErr=SnsrTypeGates
                 kbr_payload=gen_ecode(SnsrTypeGates, PswdTypeUnlock)
+                auth_token = True
             elif cmd == xxx_msg:
                 pass # do something but not implemented yet :D
             elif cmd == srv_msg:
                 snsrErr=SnsrTypeService
                 kbr_payload = gen_ecode(snsrErr, PswdTypeUnlock)
-                no_cargo_mode = True 
+                cargo_rqst = True 
+                srv_token = True
+                auth_token = True
             elif cmd == msk_msg:
                 snsrErr=SnsrTypeNoBox
                 kbr_payload = gen_ecode(SnsrTypeNoBox, PswdTypeUnlock)
-                no_cargo_mode = True           
+                cargo_rqst = True   
+                auth_token = True        
             elif cmd == crk_msg:
                 pass #do nothing, master should not recieve this message
             elif cmd == lps_msg:
@@ -275,18 +281,26 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
             elif cmd == bhd_msg:
                 snsrErr=SnsrTypeHood
                 kbr_payload = gen_ecode(snsrErr, PswdTypeBypass)
+                auth_token = True
+                
             elif cmd == bdr_msg:
                 snsrErr=SnsrTypeDoor
                 kbr_payload = gen_ecode(snsrErr, PswdTypeBypass)
+                bps_payload = bdr_msg
+                auth_token = True
             elif cmd == btk_msg:
                 snsrErr=SnsrTypeTank
                 kbr_payload= gen_ecode(snsrErr, PswdTypeBypass)
+                bps_payload = btk_msg
+                auth_token = True
             elif cmd == bbd_msg:
                 snsrErr=SnsrTypeGates
                 kbr_payload = gen_ecode(snsrErr, PswdTypeBypass)
+                bps_payload = bbd_msg
+                auth_token = True
             else:
                 #master_disconnection(keep_alive_count)
-                print(cmd)
+                #print(cmd)
                 print("No deberiamos estar aqui cerebro")
                 pass
                 
@@ -294,11 +308,14 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 #print(keep_alive_count)
                 keep_alive_count +=1
                 if keep_alive_count > 5:
-                    master_disconnection(keep_alive_count)
+                    pass
+                    #master_disconnection(keep_alive_count)
                 if keep_alive_count >= 30:
+                    pass
                     is_in_panic_mode = True
-    except:
+    except OSError as exc:
         print("DOH!")
+        print(exc)
 
 
 def monitor_inputs():
@@ -306,12 +323,12 @@ def monitor_inputs():
     if In1.value() or In2.value() or In3.value() or In4.value() or In5.value() or In6.value():
         # Se ha detectado un cambio en alguna entrada
         if In1.value():
-            gen_ecode()
+            pass#gen_ecode(1,1)
         print("Cambio detectado en entradas!")
 
 def master_disconnection(count):
-    while is_in_panic_mode:
-        if(count <= 10):
+    while is_in_panic_mode: ## we sould not get here with the main thread
+        if(count <= 10 and count > 5 ):
             Out5.init(freq = 261,duty_u16 = 1276 )
             time.sleep_ms(1000)
             Out5.duty_u16(0)
@@ -336,7 +353,7 @@ def master_reconnect():
     Out5.duty_u16(0) ##will turn off the PWM 
 
 def gen_ecode(sensor_error, passType):
-    global bigNumber
+    global bigNumber, bypass_token, lastPass
    
     _a = random.randrange(0,9) 
     _b = random.randrange(0,9)
@@ -344,7 +361,7 @@ def gen_ecode(sensor_error, passType):
     _d = random.randrange(0,9)
     _r = random.randrange(0,9)
     
-    ecode = 100000 + (sensor_error-1)*10000 + _a * 1000 + _b * 100 + _c * 10 + _d
+    ecode = 100000 + _r*10000 + _a * 1000 + _b * 100 + _c * 10 + _d
     
     _e = setNumbers(_a)#(_a * _a) // 10
     _f = setNumbers(_b)#(_b // 2)
@@ -352,11 +369,15 @@ def gen_ecode(sensor_error, passType):
     _h = setNumbers(_d)#(_d * _d * _d) // 100
     
     if passType == PswdTypeUnlock:
-        bigNumber = 100000 + _r*10000 + _f * 1000 + _h * 100 + _g * 10 + _e#100000 + (sensor_error-1)*10000 + _f * 1000 + _h * 100 + _g * 10 + _e
+        lastPass = passType
+        bigNumber = _f * 1000 + _h * 100 + _g * 10 + _e#100000 + (sensor_error-1)*10000 + _f * 1000 + _h * 100 + _g * 10 + _e
     elif passType == PswdTypeBypass:
-        bigNumber = 100000 + _r*10000 + _e * 1000 + _f * 100 + _h * 10 + _g#100000 + (sensor_error-1)*10000 + _e * 1000 + _f * 100 + _h * 10 + _g
+        lastPass = passType
+        bigNumber = _e * 1000 + _f * 100 + _h * 10 + _g#100000 + (sensor_error-1)*10000 + _e * 1000 + _f * 100 + _h * 10 + _g
+        bypass_token = True
     elif passType == PswdTypeService:
-        bigNumber = 100000 + _r*10000 + _h * 1000 + _e * 100 + _g * 10 + _f#100000 + (sensor_error-1)*10000 + _h * 1000 + _e * 100 + _g * 10 + _f
+        lastPass = passType
+        bigNumber = _h * 1000 + _e * 100 + _g * 10 + _f#100000 + (sensor_error-1)*10000 + _h * 1000 + _e * 100 + _g * 10 + _f
     else:
         pass
     
@@ -365,7 +386,7 @@ def gen_ecode(sensor_error, passType):
 
 
 def main():
-    global kbr_payload, slv_payload
+    global kbr_payload, slv_payload, no_cargo_mode,keep_alive_count, srv_token, bypass_token, bps_payload, auth_token
     try:
         init()  # Inicializar el sistema
         #_thread.start_new_thread(master_disconnection, ()) ##need to check if it works LOL
@@ -374,14 +395,34 @@ def main():
                 send_data(ath_msg)
                 recieve_data()
                 send_data(slv_payload)
-                slv_payload = slv_msg #return to default value
+                if bypass_token and not auth_token:
+                    slv_payload = slv_msg + bps_payload
+                    bypass_token = False
+                else:
+                   slv_payload = slv_msg #return to default value
                 recieve_data()
-            send_data(kbr_payload)
-            kbr_payload = kbr_msg #return to default value
-            recieve_data()
-            monitor_inputs()  # Monitorear entradas
+                send_data(kbr_payload)
+                kbr_payload = kbr_msg #return to default value
+                recieve_data()
+                monitor_inputs()  # Monitorear entradas
+            elif no_cargo_mode:
+                keep_alive_count = 0
+                time.sleep_ms(500)
+                if srv_token:
+                    send_data(slv_msg+srv_msg)
+                    srv_token = False
+                else:
+                    send_data(kbr_payload)
+                    kbr_payload=kbr_msg
+                print('Esperando mensaje')
+                recieve_data()
+            else:
+                print('Dude')
+                
+            
     except OSError as exc:
         print("DOH!")
+        print(exc)
         pass #should make a log to know where TF I'm breaking
 
 
