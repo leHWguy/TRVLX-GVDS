@@ -5,8 +5,6 @@ import _thread
 import random
 import errno
 
-
-is_master = True  # Indicador de maestro/esclavo
 is_in_panic_mode= False
 no_cargo_mode = False
 bypass = False
@@ -66,17 +64,19 @@ pst_msg = b"PST"
 xxx_msg = b"XXX"
 srv_msg = b"SRV"
 msk_msg = b"MSK"
-
+mky_msg = b"MKY"
 #KBR mssgs
 kbr_msg = b"KBR"
 crk_msg = b"CRK"
+cka_msg = b"CKA"
 err_msg = b"ERR" 
-    #lck request
+mkb_msg = b"MKB"
+#lck request
 lps_msg = b"LPS"
 lwh_msg = b"LWH"
 lsb_msg = b"LSB"
 arm_msg = b"ARM"
-    #bps request
+#bps request
 bhd_msg = b"BHD"
 bdr_msg = b"BDR"
 btk_msg = b"BTK"
@@ -88,13 +88,14 @@ snsrErr = 0
 cargo_rqst = False
 srv_token = False
 bypass_token = False
+firstkey=False
 lastPass = 0
 
 def init():
     # Configuración de pines GPIO
     global In1, In2, In3, In4, In5, In6, Out1, Out2, Out3, Out4, Out5, Out6, Re_EN, De_EN, uart
 
-    global keep_alive_count, delaycount, sensorfault, auth_token
+    global keep_alive_count, delaycount, sensorfault, auth_token, is_in_panic_mode
     delaycount = 30
     sensorfault = 0
     keep_alive_count = 0
@@ -121,12 +122,11 @@ def init():
     uart = UART(1, 9600, tx=Pin(4), rx=Pin(5), timeout = 50)
 
     # Definición de variables globales
-    global is_master
-    global ecode, bigNumber
+    global ecode, bigNumber,bigNumber2
 
     # Detección automática de maestro/esclavo (opcional)
     # ... (código para determinar si el dispositivo es maestro o esclavo)
-
+  
     # Inicialización de estados de salida
     Out1.value(0)  # Apagar actuador1
     Out2.value(0)  # Apagar actuador2
@@ -134,6 +134,7 @@ def init():
     Out4.value(0)
     Out5.duty_u16(0)  # Encender Out5 (alarma de no conexión)/alarma trailer
     Out6.value(0)
+    time.sleep_ms(500) #wait half a second to start doing stuff
 
 def send_data(data_to_send):#Function to handle the data to send, to avoid writing the RE and DE values over and over again, what a f** pain
     Re_EN.value(1) 
@@ -167,10 +168,45 @@ def setNumbers(aVariable):
     else:
         return 0
 
+def setNumbers2(aVariable):
+    if aVariable == 0:
+        return 4
+    elif aVariable == 1:
+        return 7
+    elif aVariable == 2:
+        return 0
+    elif aVariable == 3:
+        return 1
+    elif aVariable == 4:
+        return 9
+    elif aVariable == 5:
+        return 2
+    elif aVariable == 6:
+        return 5
+    elif aVariable == 7:
+        return 8
+    elif aVariable == 8:
+        return 3
+    elif aVariable == 9:
+        return 6
+    else:
+        return 0
+
+
+def sum_digits(number):
+    # Ensure the input is a string and has 14 characters
+    if len(number) != 14 or not number.isdigit():
+        raise ValueError("Input must be a 14-character number.")
+    
+    # Convert each character to an integer and sum them
+    total = sum(int(digit) for digit in number)
+    return total
+
 def recieve_data(): #Function to handle the data recieved, same reason as send_data() 
     aValue= 46
+    mvalue = 89
     
-    global cargo_rqst, keep_alive_count, auth_token, bigNumber, kbr_payload, slv_payload, snsrErr, no_cargo_mode, is_in_panic_mode, srv_token,bypass_token, lastPass, bps_payload
+    global firstkey, cargo_rqst, keep_alive_count, auth_token, bigNumber, bigNumber2, kbr_payload, slv_payload, snsrErr, no_cargo_mode, is_in_panic_mode, srv_token,bypass_token, lastPass, bps_payload
     try:   
         Re_EN.value(0)
         De_EN.value(0)
@@ -195,16 +231,22 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 key= int(data[5:9])
                 #print(key)
                 if key == bigNumber:
+                    kbr_payload = crk_msg
+                    firstkey = True
+                   
+                elif key == bigNumber2 and firstkey:
                     master_reconnect()
                     auth_token = False #We can accept new errors
                     is_in_panic_mode = False
                     keep_alive_count = 0
-                    kbr_payload = crk_msg
+                    kbr_payload = cka_msg
+                    firstkey = False
                     if cargo_rqst:
                         no_cargo_mode = True
                         
                     else:
                         no_cargo_mode = False
+
                 else:
                    #Create another error since the password was incorrect  
                     kbr_payload = gen_ecode(snsrErr, lastPass)
@@ -247,6 +289,15 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                     pass
             elif cmd == nop_msg:
                 pass #do nothing command :D
+            elif cmd == mky_msg:
+                mkey= data[3:16]
+
+                if(sum_digits(mkey) == mvalue):
+                    no_cargo_mode = True
+                else:
+                    no_cargo_mode = False  
+
+                
             elif cmd == whl_msg: #generates an error to unlock the extra wheel in the slave side
                 snsrErr=SnsrTypeWheel
                 kbr_payload=gen_ecode(snsrErr, PswdTypeUnlock)
@@ -306,17 +357,29 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 
         else:
                 #print(keep_alive_count)
-                keep_alive_count +=1
-                if keep_alive_count > 5:
-                    pass
-                    #master_disconnection(keep_alive_count)
-                if keep_alive_count >= 30:
-                    pass
-                    is_in_panic_mode = True
-    except OSError as exc:
-        print("DOH!")
-        print(exc)
+                if (keep_alive_count < 800):
+                    keep_alive_count +=1
 
+                if keep_alive_count > 30: #Approx 5 seg
+                    #pass
+                    #master_disconnection()
+                    is_in_panic_mode = True
+                    _thread.start_new_thread(master_disconnection, ())
+                    
+    except OSError as exc:
+        #print("DOH!")
+        #print(exc)
+        pass
+
+def sum_of_digits(number_str):
+    # Convert the number to a string to iterate over each digit
+    total_sum = 0
+    
+    # Iterate over each character in the string
+    for digit in number_str:
+        total_sum += int(digit)
+    
+    return total_sum
 
 def monitor_inputs():
 
@@ -326,19 +389,23 @@ def monitor_inputs():
             pass#gen_ecode(1,1)
         print("Cambio detectado en entradas!")
 
-def master_disconnection(count):
-    while is_in_panic_mode: ## we sould not get here with the main thread
-        if(count <= 10 and count > 5 ):
+def master_disconnection():
+    global  keep_alive_count, is_in_panic_mode
+    firstAlarm = 100
+    secondAlarm = 200
+    thirdAlarm = 300
+    if is_in_panic_mode: ## we sould not get here with the main thread
+        if( keep_alive_count <= firstAlarm and  keep_alive_count > 5 ):
             Out5.init(freq = 261,duty_u16 = 1276 )
             time.sleep_ms(1000)
             Out5.duty_u16(0)
             time.sleep_ms(1000)
-        elif(count <= 15):
+        elif( keep_alive_count > firstAlarm and  keep_alive_count <= secondAlarm):
             Out5.init(freq = 277,duty_u16 = 1276*2 )
             time.sleep_ms(800)
             Out5.duty_u16(0)
             time.sleep_ms(800)
-        elif(count > 15 and count <= 20):
+        elif( keep_alive_count > secondAlarm and  keep_alive_count <= thirdAlarm):
             Out5.init(freq = 329,duty_u16 = 1276*3)
             time.sleep_ms(500)
             Out5.duty_u16(0)
@@ -347,13 +414,17 @@ def master_disconnection(count):
             Out5.init(freq = 698,duty_u16 = 1276*4)
             time.sleep_ms(300)
             Out5.duty_u16(0)
-            time.sleep_ms(300)
-    
+            time.sleep_ms(100)
+    else:
+        #print("thread 1 here")
+        _thread.exit()
+    _thread.exit()
+
 def master_reconnect():
     Out5.duty_u16(0) ##will turn off the PWM 
 
 def gen_ecode(sensor_error, passType):
-    global bigNumber, bypass_token, lastPass
+    global bigNumber, bypass_token, lastPass, bigNumber2
    
     _a = random.randrange(0,9) 
     _b = random.randrange(0,9)
@@ -368,33 +439,46 @@ def gen_ecode(sensor_error, passType):
     _g = setNumbers(_c)#_c // (_a + 1)
     _h = setNumbers(_d)#(_d * _d * _d) // 100
     
+    _e2 = setNumbers2(_a)#(_a * _a) // 10
+    _f2 = setNumbers2(_b)#(_b // 2)
+    _g2 = setNumbers2(_c)#_c // (_a + 1)
+    _h2 = setNumbers2(_d)#(_d * _d * _d) // 100
+
     if passType == PswdTypeUnlock:
         lastPass = passType
         bigNumber = _f * 1000 + _h * 100 + _g * 10 + _e#100000 + (sensor_error-1)*10000 + _f * 1000 + _h * 100 + _g * 10 + _e
+        bigNumber2 =_f2 * 1000 + _h2 * 100 + _g2 * 10 + _e2
     elif passType == PswdTypeBypass:
         lastPass = passType
         bigNumber = _e * 1000 + _f * 100 + _h * 10 + _g#100000 + (sensor_error-1)*10000 + _e * 1000 + _f * 100 + _h * 10 + _g
+        bigNumber2 = _e2 * 1000 + _f2 * 100 + _h2 * 10 + _g2
         bypass_token = True
     elif passType == PswdTypeService:
         lastPass = passType
         bigNumber = _h * 1000 + _e * 100 + _g * 10 + _f#100000 + (sensor_error-1)*10000 + _h * 1000 + _e * 100 + _g * 10 + _f
+        bigNumber2 = _h2 * 1000 + _e2 * 100 + _g2 * 10 + _f2
     else:
+        
         pass
     
-    #print(bigNumber)
+    
     return err_msg + str(ecode)
 
 
 def main():
-    global kbr_payload, slv_payload, no_cargo_mode,keep_alive_count, srv_token, bypass_token, bps_payload, auth_token
+    global kbr_payload, slv_payload, no_cargo_mode,keep_alive_count, srv_token, bypass_token, bps_payload, auth_token, is_in_panic_mode
+    
     try:
         init()  # Inicializar el sistema
-        #_thread.start_new_thread(master_disconnection, ()) ##need to check if it works LOL
+        #auth_token = True
+        #kbr_payload = gen_ecode(1, PswdTypeUnlock)
+        #_thread.start_new_thread(master_disconnection, ())##need to check if it works LOL
         while True:
-            if not no_cargo_mode:
-                send_data(ath_msg)
-                recieve_data()
-                send_data(slv_payload)
+            if not no_cargo_mode: #Should not have an error generated and no cargo mode is not running
+                if not auth_token: #if the authorization token is false (not requested)
+                    send_data(ath_msg) #Send the authorization data
+                    recieve_data() #Wait for a little moment for the respones
+                send_data(slv_payload) #Monitor how the
                 if bypass_token and not auth_token:
                     slv_payload = slv_msg + bps_payload
                     bypass_token = False
@@ -403,6 +487,8 @@ def main():
                 recieve_data()
                 send_data(kbr_payload)
                 kbr_payload = kbr_msg #return to default value
+                recieve_data()
+                send_data(mkb_msg)
                 recieve_data()
                 monitor_inputs()  # Monitorear entradas
             elif no_cargo_mode:
@@ -414,7 +500,7 @@ def main():
                 else:
                     send_data(kbr_payload)
                     kbr_payload=kbr_msg
-                print('Esperando mensaje')
+                #print('Esperando mensaje')
                 recieve_data()
             else:
                 print('Dude')

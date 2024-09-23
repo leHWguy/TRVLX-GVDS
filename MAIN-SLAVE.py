@@ -12,7 +12,7 @@ LED19 = 19 # 19 is a LED
 RE_Pin = 24
 DE_Pin = 23
 
-prep_time = 25
+prep_time = 15
 sleep_time = 10
 
 SnsrTypeHood = 1
@@ -34,9 +34,10 @@ PicoIn3 = 18
 PicoIn4 = 20
 PicoIn5 = 21
 
-delaycounts = 50 #Seconds
+delaycounts = 35 #Seconds
 slave_msg = None
 master_msg = None
+ath_time = 0
 
 keep_alive_count = 0
 auth_token = False
@@ -60,11 +61,15 @@ xxx_msg = b"XXX"
 srv_msg = b"SRV"
 msk_msg = b"MSK"
 crk_msg = b"CRK"
+mky_msg = b"MKY"
+mkb_msg = b"MKB"
+
 #lck request
 lps_msg = b"LPS"
 lwh_msg = b"LWH"
 lsb_msg = b"LSB"
 arm_msg = b"ARM"
+
 #bps request
 bhd_msg = b"BHD"
 bdr_msg = b"BDR"
@@ -100,22 +105,23 @@ def init():
 
     Re_EN = Pin(RE_Pin, Pin.OUT)
     De_EN = Pin(DE_Pin, Pin.OUT)
+    
 
     # Inicialización de la comunicación UART y RS485
     uart = UART(1, 9600, tx=Pin(4), rx=Pin(5), timeout = 20)
 
     # Definición de variables globales
-    global is_master
+    global is_master, ath_time
 
     # Detección automática de maestro/esclavo (opcional)
     # ... (código para determinar si el dispositivo es maestro o esclavo)
-
+    ath_time = time.ticks_ms()
     # Inicialización de estados de salida
     Out1.value(0)  # Apagar actuador1
     Out2.value(0)  # Apagar actuador2
     Out3.value(0)  # Apagar 
     Out4.value(0)
-    Out5.value(0)  # Encender Out5 (alarma de no conexión)/alarma trailer
+    Out5.value(0)  # Apagar Out5 (alarma de no conexión)/alarma trailer
     Out6.value(0)
     Re_EN.value(0)
     De_EN.value(0)
@@ -130,7 +136,7 @@ def send_data(data_to_send):#Function to handle the data to send, to avoid writi
 
 def recieve_data(): #Function to handle the data recieved, same reason as send_data() 
     
-    global keep_alive_count, srv_token,in1_enable, in2_enable, in3_enable, in4_enable, in5_enable, in6_enable
+    global keep_alive_count, srv_token,in1_enable, in2_enable, in3_enable, in4_enable, in5_enable, in6_enable, ath_time
     try:
         Re_EN.value(0)
         De_EN.value(0)
@@ -138,17 +144,20 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
 
         data = uart.readline()
         if data and data != "" :#if data is not empty      
-            cmd=data[0:3]  #extract command from uart           
+            cmd=data[0:3]  #extract command from uart
+            print(cmd)
             if cmd == ack_msg:
                 pass
             elif cmd == ath_msg:
+                
                 keep_alive_count = 0
                 send_data(ack_msg)
                 srv_token = False #Override service token when it is connected to a Master 
+                ath_time = time.ticks_ms()
+                print(time.ticks_diff(time.ticks_ms(), ath_time))
                 slave_auth()
                 #print(len(data))
             elif cmd == slv_msg:
-                print(data)
                 if (len(data) > 3 ):
                     if data[3:6] == lps_msg:
                         pass ##Turn on something
@@ -188,6 +197,10 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 pass #do nothing, slave should not recieve this message
             elif cmd == lsb_msg:
                 pass #do nothing, slave should not recieve this message
+            elif cmd == mkb_msg:
+                pass #do nothing, slave should not recieve this message
+            elif cmd == mky_msg:
+                pass #do nothing, slave should not recieve this message
             
             else:
                 #master_disconnection(keep_alive_count)
@@ -204,7 +217,7 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
 def monitor_inputs():
     global input_changed, input_status, in1_enable, in2_enable, in3_enable, in4_enable, in5_enable, in6_enable
     # Monitorear entradas In1 a In6
-
+    
     if (In1.value() or In2.value() or In3.value() or In4.value() or In5.value() or In6.value()) and not input_changed:
         # Se ha detectado un cambio en alguna entrada
         input_changed = True
@@ -256,14 +269,15 @@ def slave_wheel(open_wheel):
 
 def main():
     init()  # Inicializar el sistema
-    global keep_alive_count, input_changed, srv_token
+    global keep_alive_count, input_changed, srv_token,ath_time
     delaycount = 290
+    deadTime = 35000 
     try:
         while True:
             # Bucle principal del esclavo
 
             recieve_data()
-            if keep_alive_count >= delaycount:
+            if time.ticks_diff(time.ticks_ms(), ath_time) > deadTime :#keep_alive_count >= delaycount:
                 slave_panic()
             else:
                 keep_alive_count += 1
@@ -271,6 +285,8 @@ def main():
             monitor_inputs()
             if srv_token:
                 keep_alive_count = 0
+                ath_time = time.ticks_ms()
+            #print(time.ticks_diff(time.ticks_ms(), ath_time))          
     except:
         pass
 
