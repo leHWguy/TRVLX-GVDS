@@ -154,7 +154,7 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 send_data(ack_msg)
                 srv_token = False #Override service token when it is connected to a Master 
                 ath_time = time.ticks_ms()
-                print(time.ticks_diff(time.ticks_ms(), ath_time))
+                #print(time.ticks_diff(time.ticks_ms(), ath_time))
                 slave_auth()
                 #print(len(data))
             elif cmd == slv_msg:
@@ -175,6 +175,8 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                         in1_enable = False
                     elif data[3:6] == srv_msg:
                         srv_token = True
+                        slave_auth()
+                        ath_time = time.ticks_ms()
 
                     else:
                         pass # Do nothing, good life
