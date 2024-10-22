@@ -1,6 +1,6 @@
 from machine import Pin, UART, Timer
 import time
-
+# Good eginieereing isn't built on confidence 
 # Define out pins
 PicoOut0 = 6
 PicoOut1 = 7
@@ -38,12 +38,14 @@ delaycounts = 35 #Seconds
 slave_msg = None
 master_msg = None
 ath_time = 0
+hbridge_time = 0
 
 keep_alive_count = 0
 auth_token = False
 input_changed = False
 input_status = b"0"
 srv_token = False
+hbr_en = False
 
 #Strings for fun
 err_msg = b"ERR" 
@@ -75,6 +77,11 @@ bhd_msg = b"BHD"
 bdr_msg = b"BDR"
 btk_msg = b"BTK"
 bbd_msg = b"BBD"
+
+spo_msg = b"SPO" # Piston open
+spc_msg = b"SPC" # Piston close
+
+
 in1_enable = True
 in2_enable = True
 in3_enable = True
@@ -95,8 +102,8 @@ def init():
     In5 = Pin(PicoIn4, Pin.IN)
     In6 = Pin(PicoIn5, Pin.IN)
 
-    Out1 = Pin(PicoOut1, Pin.OUT)
-    Out2 = Pin(PicoOut0, Pin.OUT)
+    Out1 = Pin(PicoOut1, Pin.OUT) #FWD Piston (place holder)
+    Out2 = Pin(PicoOut0, Pin.OUT) #RVS Piston (place holder)
     Out3 = Pin(PicoOut4, Pin.OUT) #Alarma
     Out4 = Pin(PicoOut3, Pin.OUT) #Valvula 2
     Out5 = Pin(PicoOut2, Pin.OUT)
@@ -116,6 +123,7 @@ def init():
     # Detección automática de maestro/esclavo (opcional)
     # ... (código para determinar si el dispositivo es maestro o esclavo)
     ath_time = time.ticks_ms()
+
     # Inicialización de estados de salida
     Out1.value(0)  # Apagar actuador1
     Out2.value(0)  # Apagar actuador2
@@ -136,7 +144,7 @@ def send_data(data_to_send):#Function to handle the data to send, to avoid writi
 
 def recieve_data(): #Function to handle the data recieved, same reason as send_data() 
     
-    global keep_alive_count, srv_token,in1_enable, in2_enable, in3_enable, in4_enable, in5_enable, in6_enable, ath_time
+    global hbr_en, hbridge_time, keep_alive_count, srv_token,in1_enable, in2_enable, in3_enable, in4_enable, in5_enable, in6_enable, ath_time
     try:
         Re_EN.value(0)
         De_EN.value(0)
@@ -154,7 +162,7 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 send_data(ack_msg)
                 srv_token = False #Override service token when it is connected to a Master 
                 ath_time = time.ticks_ms()
-                print(time.ticks_diff(time.ticks_ms(), ath_time))
+                
                 slave_auth()
                 #print(len(data))
             elif cmd == slv_msg:
@@ -175,7 +183,14 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                         in1_enable = False
                     elif data[3:6] == srv_msg:
                         srv_token = True
-
+                    elif data[3:6] == spo_msg:
+                        slave_gates_open()
+                        hbr_en = True
+                        hbridge_time = time.ticks_ms()
+                    elif data[3:6] == spc_msg:
+                        slave_gates_close()
+                        hbr_en = True
+                        hbridge_time = time.ticks_ms()
                     else:
                         pass # Do nothing, good life
                 else:
@@ -221,9 +236,9 @@ def monitor_inputs():
     if (In1.value() or In2.value() or In3.value() or In4.value() or In5.value() or In6.value()) and not input_changed:
         # Se ha detectado un cambio en alguna entrada
         input_changed = True
-        if In1.value() and in1_enable:
+        if In1.value() and in1_enable: #Door on the cargo trailer
             input_status = b"1"
-        elif In2.value() and in2_enable:
+        elif In2.value() and in2_enable: #
             input_status = b"2"
         elif In3.value() and in3_enable:
             input_status = b"3"   
@@ -249,11 +264,19 @@ def slave_panic():
     Out6.value(0) # Valvula
     LED_pin.value(1) #
 
-def slave_gates(open_gate):
-    if open_gate:
-        pass #Do something to open the piston
-    else:
-        pass #Do something to close the piston
+def slave_gates_open():
+    Out2.value(0)  
+    Out1.value(1)  
+    
+    
+
+def slave_gates_close(): # Instruct the piston to go up, is an electronic deadbolt
+    Out1.value(0)  
+    Out2.value(1)    
+
+def slave_gates_null(): #avoid keeping x H bridge always runing
+    Out1.value(0)  
+    Out2.value(0)  
 
 def slave_auth():
     Out3.value(0) # Apagar Out3 (alarma de no conexión)
@@ -262,15 +285,16 @@ def slave_auth():
     LED_pin.value(0)#
 
 def slave_wheel(open_wheel):
-    if open_wheel:
+    if open_wheel: #Implement the same stuff as slave gates
         pass
     else:
         pass
 
 def main():
     init()  # Inicializar el sistema
-    global keep_alive_count, input_changed, srv_token,ath_time
+    global hbr_en, keep_alive_count, input_changed, srv_token, ath_time, hbridge_time
     delaycount = 290
+    hbridge_time_reset = 10000 # This time changes, it depends on what 
     deadTime = 35000 
     try:
         while True:
@@ -286,7 +310,12 @@ def main():
             if srv_token:
                 keep_alive_count = 0
                 ath_time = time.ticks_ms()
-            #print(time.ticks_diff(time.ticks_ms(), ath_time))          
+            #print(time.ticks_diff(time.ticks_ms(), ath_time))  
+            if hbr_en:
+                if time.ticks_diff(time.ticks_ms(), hbridge_time) > hbridge_time_reset:
+                        hbr_en = False
+                        slave_gates_null()
+
     except:
         pass
 

@@ -4,7 +4,7 @@ import time
 import _thread
 import random
 import errno
-
+# Good eginieereing isn't built on confidence 
 is_in_panic_mode= False
 no_cargo_mode = False
 bypass = False
@@ -52,50 +52,57 @@ auth_token = False
 sensor_status = False #Will help us monitor any input
 #Strings for fun
 
-slv_msg = b"SLV"
-esl_msg = b"ESL"
-key_msg = b"KEY"
-ath_msg = b"ATH"
-ack_msg = b"ACK"
-mst_msg = b"MST"
-nop_msg = b"NOP"
-whl_msg = b"WHL"
-pst_msg = b"PST"
-xxx_msg = b"XXX"
-srv_msg = b"SRV"
-msk_msg = b"MSK"
-mky_msg = b"MKY"
+slv_msg = b"SLV" # Message keyword to communicate with the slave
+esl_msg = b"ESL" # Message keyword to communicate with the extra slave
+key_msg = b"KEY" # Message keyword to communicate wit Keyboard 
+ath_msg = b"ATH" # Message keyword to communicate with the slave 
+ack_msg = b"ACK" # Message keyword to communicate with the slave
+mst_msg = b"MST" # Message keyword to communicate with the slave
+nop_msg = b"NOP" # Message keyword to communicate with the any controller
+whl_msg = b"WHL" # Message keyword to communicate with the slave
+pst_msg = b"PST" # Message keyword to communicate with the slave
+xxx_msg = b"XXX" # Message keyword to communicate with the slave
+srv_msg = b"SRV" # Message keyword to communicate with the slave
+msk_msg = b"MSK" # Message keyword to communicate with the slave
+mky_msg = b"MKY" # Message keyword to communicate with the keyboard
+
+spo_msg = b"SPO" # Message keyword to communicate with the slave - Piston open
+spc_msg = b"SPC" # Message keyword to communicate with the slave - Piston close
+
 #KBR mssgs
-kbr_msg = b"KBR"
-crk_msg = b"CRK"
-cka_msg = b"CKA"
-err_msg = b"ERR" 
-mkb_msg = b"MKB"
+kbr_msg = b"KBR" # Message keyword to communicate with the Keyboard
+crk_msg = b"CRK" # Message keyword to communicate with the Keyboard
+cka_msg = b"CKA" # Message keyword to communicate with the Keyboard
+err_msg = b"ERR" # Message keyword to communicate with the Keyboard
+mkb_msg = b"MKB" # Message keyword to communicate with the Keyboard
 #lck request
-lps_msg = b"LPS"
-lwh_msg = b"LWH"
-lsb_msg = b"LSB"
-arm_msg = b"ARM"
+lps_msg = b"LPS" # Message keyword to communicate with the slave
+lwh_msg = b"LWH" # Message keyword to communicate with the slave
+lsb_msg = b"LSB" # Message keyword to communicate with the slave
+arm_msg = b"ARM" # Message keyword to communicate with the slave
 #bps request
-bhd_msg = b"BHD"
-bdr_msg = b"BDR"
-btk_msg = b"BTK"
-bbd_msg = b"BBD"
-bps_payload = ""
-kbr_payload = kbr_msg
-slv_payload = slv_msg
+bhd_msg = b"BHD" # Message keyword to communicate with the slave
+bdr_msg = b"BDR" # Message keyword to communicate with the slave
+btk_msg = b"BTK" # Message keyword to communicate with the slave
+bbd_msg = b"BBD" # Message keyword to communicate with the slave
+bps_payload = "" # Message variable to have a cleaner code, allegedly
+kbr_payload = kbr_msg # payload message to send to the keyboard
+slv_payload = slv_msg # payload message to send to the slave
+cmd_payload = ""
 snsrErr = 0
-cargo_rqst = False
-srv_token = False
-bypass_token = False
-firstkey=False
-lastPass = 0
+cargo_rqst = False # Flags because why not
+command_rqst = False
+srv_token = False # Flags because why not
+bypass_token = False # Flags because why not
+firstkey=False # Flags because why not
+lastPass = 0 # Flags because why not
+command_token = False
 
 def init():
     # Configuración de pines GPIO
     global In1, In2, In3, In4, In5, In6, Out1, Out2, Out3, Out4, Out5, Out6, Re_EN, De_EN, uart
 
-    global keep_alive_count, delaycount, sensorfault, auth_token, is_in_panic_mode
+    global keep_alive_count, delaycount, sensorfault, auth_token, is_in_panic_mode, command_token
     delaycount = 30
     sensorfault = 0
     keep_alive_count = 0
@@ -144,7 +151,7 @@ def send_data(data_to_send):#Function to handle the data to send, to avoid writi
     uart.write(data_to_send)
     time.sleep_ms(sleep_time)
 
-def setNumbers(aVariable):
+def setNumbers(aVariable): # Easier than create an algorithm that makes thing more predictable
     if aVariable == 0:
         return 6
     elif aVariable == 1:
@@ -168,7 +175,7 @@ def setNumbers(aVariable):
     else:
         return 0
 
-def setNumbers2(aVariable):
+def setNumbers2(aVariable): # Easier than create an algorithm that makes thing more predictable
     if aVariable == 0:
         return 4
     elif aVariable == 1:
@@ -193,7 +200,7 @@ def setNumbers2(aVariable):
         return 0
 
 
-def sum_digits(number):
+def sum_digits(number): # This thing isnt used and may bot be used in a long time.
     # Ensure the input is a string and has 14 characters
     if len(number) != 14 or not number.isdigit():
         raise ValueError("Input must be a 14-character number.")
@@ -206,7 +213,7 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
     aValue= 46
     mvalue = 89
     
-    global firstkey, cargo_rqst, keep_alive_count, auth_token, bigNumber, bigNumber2, kbr_payload, slv_payload, snsrErr, no_cargo_mode, is_in_panic_mode, srv_token,bypass_token, lastPass, bps_payload
+    global command_rqst, command_token, cmd_payload, firstkey, cargo_rqst, keep_alive_count, auth_token, bigNumber, bigNumber2, kbr_payload, slv_payload, snsrErr, no_cargo_mode, is_in_panic_mode, srv_token,bypass_token, lastPass, bps_payload
     try:   
         Re_EN.value(0)
         De_EN.value(0)
@@ -246,6 +253,11 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                         
                     else:
                         no_cargo_mode = False
+                    if command_rqst: # This Flags only applies for commands that need pin 
+                        command_token = True
+                    else: 
+                        command_token = False
+                    
 
                 else:
                    #Create another error since the password was incorrect  
@@ -305,7 +317,8 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
             elif cmd == pst_msg: #generates an error to unlock the pistons in the slave side (Door piston)
                 snsrErr=SnsrTypeGates
                 kbr_payload=gen_ecode(SnsrTypeGates, PswdTypeUnlock)
-                auth_token = True
+                command_rqst = True  # flag means there is a command request
+                cmd_payload = spo_msg # we save what command is needed to be sent
             elif cmd == xxx_msg:
                 pass # do something but not implemented yet :D
             elif cmd == srv_msg:
@@ -321,12 +334,12 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 auth_token = True        
             elif cmd == crk_msg:
                 pass #do nothing, master should not recieve this message
-            elif cmd == lps_msg:
-                slv_payload = slave_msg + lps_msg
+            elif cmd == lps_msg: #Close cargo deadbolt/pistons
+                slv_payload = slv_msg + spc_msg                    
             elif cmd == lwh_msg:
-                slv_payload = slave_msg + lwh_msg
+                slv_payload = slv_msg + lwh_msg
             elif cmd == lsb_msg:
-                slv_payload = slave_msg + lsb_msg
+                slv_payload = slv_msg + lsb_msg
             elif cmd == arm_msg:
                 no_cargo_mode = False
             elif cmd == bhd_msg:
@@ -386,8 +399,8 @@ def monitor_inputs():
     if In1.value() or In2.value() or In3.value() or In4.value() or In5.value() or In6.value():
         # Se ha detectado un cambio en alguna entrada
         if In1.value():
-            pass#gen_ecode(1,1)
-        print("Cambio detectado en entradas!")
+            pass #gen_ecode(1,1)
+        #print("Cambio detectado en entradas!")
 
 def master_disconnection():
     global  keep_alive_count, is_in_panic_mode
@@ -466,22 +479,25 @@ def gen_ecode(sensor_error, passType):
 
 
 def main():
-    global kbr_payload, slv_payload, no_cargo_mode,keep_alive_count, srv_token, bypass_token, bps_payload, auth_token, is_in_panic_mode
+    global command_token, kbr_payload, slv_payload, no_cargo_mode,keep_alive_count, srv_token, bypass_token, bps_payload, auth_token, is_in_panic_mode
     
     try:
         init()  # Inicializar el sistema
         #auth_token = True
         #kbr_payload = gen_ecode(1, PswdTypeUnlock)
-        #_thread.start_new_thread(master_disconnection, ())##need to check if it works LOL
+        #_thread.start_new_thread(master_disconnection, ())##need to check if it works LOL, it does not work as I expected need to go deep into this, have a temporary fix, but you know what they say, there isn't a more permanent fixt than a temporary fix
         while True:
             if not no_cargo_mode: #Should not have an error generated and no cargo mode is not running
-                if not auth_token: #if the authorization token is false (not requested)
+                if not auth_token: #stupid flag, if auth is false, it means we send auth messages, if auth is true it means there is an error code generated, we may change this in the future
                     send_data(ath_msg) #Send the authorization data
                     recieve_data() #Wait for a little moment for the respones
-                send_data(slv_payload) #Monitor how the
-                if bypass_token and not auth_token:
+                send_data(slv_payload) #Monitor how the sensors are
+                if bypass_token and not auth_token:# This if-else loop checks if there is a command and send it
                     slv_payload = slv_msg + bps_payload
                     bypass_token = False
+                elif command_token:
+                    slv_payload = slv_msg + cmd_payload
+                    command_token = False
                 else:
                    slv_payload = slv_msg #return to default value
                 recieve_data()
@@ -495,11 +511,11 @@ def main():
                 keep_alive_count = 0
                 time.sleep_ms(500)
                 if srv_token:
-                    send_data(slv_msg+srv_msg)
+                    send_data(slv_msg + srv_msg)
                     srv_token = False
                 else:
                     send_data(kbr_payload)
-                    kbr_payload=kbr_msg
+                    kbr_payload = kbr_msg
                 #print('Esperando mensaje')
                 recieve_data()
             else:
