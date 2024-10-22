@@ -162,7 +162,6 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                 send_data(ack_msg)
                 srv_token = False #Override service token when it is connected to a Master 
                 ath_time = time.ticks_ms()
-                
                 slave_auth()
                 #print(len(data))
             elif cmd == slv_msg:
@@ -191,6 +190,7 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                         slave_gates_close()
                         hbr_en = True
                         hbridge_time = time.ticks_ms()
+
                     else:
                         pass # Do nothing, good life
                 else:

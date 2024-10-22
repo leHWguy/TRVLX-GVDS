@@ -250,6 +250,7 @@ def recieve_data(): #Function to handle the data recieved, same reason as send_d
                     firstkey = False
                     if cargo_rqst:
                         no_cargo_mode = True
+                        cargo_rqst = False
                         
                     else:
                         no_cargo_mode = False
